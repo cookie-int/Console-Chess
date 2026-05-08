@@ -209,7 +209,6 @@ public:
     }
 };
 
-// tracks remaining time for a player; supports timed and untimed modes
 class Timer
 {
 private:
@@ -266,7 +265,6 @@ public:
         return sec;
     }
 
-    // returns time as mm:ss string, or "--:--" for untimed
     string format() const
     {
         if (!timed)
@@ -293,6 +291,23 @@ public:
 
         return to_string(m) + ":" + (s < 10 ? "0" : "") + to_string(s);
     }
+};
+
+// player owns a name, colour, and their own timer
+class Player
+{
+private:
+    string name;
+    Colour colour;
+    Timer timer;
+
+public:
+    Player(string n, Colour c, int timeLimit, bool isTimed)
+        : name(n), colour(c), timer(timeLimit, isTimed) {}
+
+    string getName() const { return name; }
+    Colour getColor() const { return colour; }
+    Timer &getTimer() { return timer; }
 };
 
 void initializeBoard(Piece *grid[8][8])
@@ -538,17 +553,21 @@ int main()
     Piece *grid[8][8];
     initializeBoard(grid);
 
+    // players now carry their own timers
+    Player white("white", WHITE, 600, false);
+    Player black("black", BLACK, 600, false);
+
+    white.getTimer().start();
+
     Colour turn = WHITE;
     string input;
-
-    // just testing Timer exists and works before wiring into Player
-    Timer t(600, true);
-    t.start();
 
     while (true)
     {
         system("cls");
         displayBoard(grid);
+
+        Player &current = (turn == WHITE) ? white : black;
 
         if (isCheckmate(grid, turn))
         {
@@ -561,8 +580,7 @@ int main()
             cout << "check!\n";
         }
 
-        cout << "time remaining: " << t.format() << "\n";
-        cout << (turn == WHITE ? "white" : "black") << " to move (e.g. e2 e4): ";
+        cout << current.getName() << " [" << current.getTimer().format() << "] to move (e.g. e2 e4): ";
         getline(cin, input);
 
         if (input.length() < 5)
@@ -580,10 +598,14 @@ int main()
 
         if (grid[m.dr][m.dc] != nullptr && grid[m.sr][m.sc] == nullptr)
         {
+            current.getTimer().stop();
             turn = (turn == WHITE) ? BLACK : WHITE;
+            Player &next = (turn == WHITE) ? white : black;
+            next.getTimer().start();
         }
 
         Sleep(500);
     }
 
-    return 0
+    return 0;
+}
