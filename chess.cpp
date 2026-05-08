@@ -3,18 +3,16 @@
 #include <windows.h>
 using namespace std;
 
-// since there are only 2 possible colours we use enum
 enum Colour
 {
     WHITE,
     BLACK
 };
 
-// to store move current and destination coordinates
 struct Move
 {
-    int sr, sc; // source row, col
-    int dr, dc; // destination row, col
+    int sr, sc;
+    int dr, dc;
 };
 
 struct Position
@@ -43,8 +41,6 @@ public:
     virtual ~Piece() {}
 };
 
-// pawn moves forward 1, forward 2 from start row, or captures diagonally
-// direction depends on colour: white goes up (-1), black goes down (+1)
 class Pawn : public Piece
 {
 public:
@@ -61,13 +57,11 @@ public:
         int dr = m.dr, dc = m.dc;
         Piece *dest = grid[dr][dc];
 
-        // forward 1
         if (dc == sc && dest == nullptr && dr == sr + dir())
         {
             return true;
         }
 
-        // forward 2 from starting row
         if ((colour == WHITE && sr == 6) || (colour == BLACK && sr == 1))
         {
             if (dc == sc &&
@@ -79,7 +73,6 @@ public:
             }
         }
 
-        // diagonal capture: opponent piece must be present
         if (abs(static_cast<int>(dc - sc)) == 1 && dr == sr + dir() && dest != nullptr && dest->getColor() != colour)
         {
             return true;
@@ -89,7 +82,6 @@ public:
     }
 };
 
-// rook moves any number of squares along a row or column, path must be clear
 class Rook : public Piece
 {
 public:
@@ -126,7 +118,6 @@ public:
     }
 };
 
-// knight moves in an l-shape (2+1), jumps over pieces
 class Knight : public Piece
 {
 public:
@@ -147,7 +138,6 @@ public:
     }
 };
 
-// bishop moves diagonally any number of squares, path must be clear
 class Bishop : public Piece
 {
 public:
@@ -184,7 +174,6 @@ public:
     }
 };
 
-// queen combines rook and bishop movement
 class Queen : public Piece
 {
 public:
@@ -199,7 +188,6 @@ public:
     }
 };
 
-// king moves exactly 1 square in any direction
 class King : public Piece
 {
 public:
@@ -284,11 +272,74 @@ void displayBoard(Piece *grid[8][8])
     cout << "   a   b   c   d   e   f   g   h\n";
 }
 
-// temporarily applies the move, checks if own king ends up in check, then undoes it
-// returns true if the move is safe
-bool makeMoveAndTest(Piece *grid[8][8], Move m, Colour turn);
+// uses dynamic_cast to reliably identify the king piece on the board
+Position findKing(Piece *grid[8][8], Colour kingColor)
+{
+    for (int i = 0; i < 8; i++)
+    {
+        for (int j = 0; j < 8; j++)
+        {
+            if (grid[i][j] != nullptr && grid[i][j]->getColor() == kingColor)
+            {
+                if (dynamic_cast<King *>(grid[i][j]))
+                {
+                    return {i, j};
+                }
+            }
+        }
+    }
 
-bool isKingInCheck(Piece *grid[8][8], Colour kingColor);
+    return {-1, -1};
+}
+
+// checks if any opponent piece can attack the king's position
+bool isKingInCheck(Piece *grid[8][8], Colour kingColor)
+{
+    Position king = findKing(grid, kingColor);
+
+    if (king.r == -1)
+    {
+        return false;
+    }
+
+    for (int i = 0; i < 8; i++)
+    {
+        for (int j = 0; j < 8; j++)
+        {
+            Piece *p = grid[i][j];
+
+            if (p == nullptr || p->getColor() == kingColor)
+            {
+                continue;
+            }
+
+            Move testMove = {i, j, king.r, king.c};
+
+            if (p->isValidMove(grid, testMove))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool makeMoveAndTest(Piece *grid[8][8], Move m, Colour turn)
+{
+    Piece *captured = grid[m.dr][m.dc];
+    Piece *moving = grid[m.sr][m.sc];
+
+    grid[m.dr][m.dc] = moving;
+    grid[m.sr][m.sc] = nullptr;
+
+    bool inCheck = isKingInCheck(grid, turn);
+
+    grid[m.sr][m.sc] = moving;
+    grid[m.dr][m.dc] = captured;
+
+    return !inCheck;
+}
 
 bool isLegalMove(Piece *grid[8][8], Move m, Colour turn)
 {
@@ -314,73 +365,6 @@ bool isLegalMove(Piece *grid[8][8], Move m, Colour turn)
     return true;
 }
 
-bool isKingInCheck(Piece *grid[8][8], Colour kingColor)
-{
-    // find king position
-    int kr = -1, kc = -1;
-    for (int i = 0; i < 8; i++)
-    {
-        for (int j = 0; j < 8; j++)
-        {
-            if (grid[i][j] != nullptr && grid[i][j]->getColor() == kingColor)
-            {
-                // we'll add findKing properly in the next commit, using symbol for now
-                if (grid[i][j]->getSymbol() == "♔ " || grid[i][j]->getSymbol() == "♚ ")
-                {
-                    kr = i;
-                    kc = j;
-                }
-            }
-        }
-    }
-
-    if (kr == -1)
-    {
-        return false;
-    }
-
-    // check if any opponent piece can reach the king
-    for (int i = 0; i < 8; i++)
-    {
-        for (int j = 0; j < 8; j++)
-        {
-            Piece *p = grid[i][j];
-
-            if (p == nullptr || p->getColor() == kingColor)
-            {
-                continue;
-            }
-
-            Move testMove = {i, j, kr, kc};
-
-            if (p->isValidMove(grid, testMove))
-            {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-bool makeMoveAndTest(Piece *grid[8][8], Move m, Colour turn)
-{
-    Piece *captured = grid[m.dr][m.dc];
-    Piece *moving = grid[m.sr][m.sc];
-
-    grid[m.dr][m.dc] = moving;
-    grid[m.sr][m.sc] = nullptr;
-
-    bool inCheck = isKingInCheck(grid, turn);
-
-    // undo
-    grid[m.sr][m.sc] = moving;
-    grid[m.dr][m.dc] = captured;
-
-    return !inCheck;
-}
-
-// executes the move on the board after all validation passes
 void movePiece(Piece *grid[8][8], Move m, Colour currentTurn)
 {
     Piece *p = grid[m.sr][m.sc];
@@ -410,6 +394,59 @@ void movePiece(Piece *grid[8][8], Move m, Colour currentTurn)
     grid[m.sr][m.sc] = nullptr;
 }
 
+// scans all pieces of the current player to see if any legal move exists
+bool hasAnyLegalMove(Piece *grid[8][8], Colour turn)
+{
+    for (int sr = 0; sr < 8; sr++)
+    {
+        for (int sc = 0; sc < 8; sc++)
+        {
+            Piece *p = grid[sr][sc];
+
+            if (p == nullptr || p->getColor() != turn)
+            {
+                continue;
+            }
+
+            for (int dr = 0; dr < 8; dr++)
+            {
+                for (int dc = 0; dc < 8; dc++)
+                {
+                    Move m{sr, sc, dr, dc};
+
+                    if (!p->isValidMove(grid, m))
+                    {
+                        continue;
+                    }
+
+                    if (makeMoveAndTest(grid, m, turn))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+// checkmate: king is in check and there are no legal moves left
+bool isCheckmate(Piece *grid[8][8], Colour turn)
+{
+    if (!isKingInCheck(grid, turn))
+    {
+        return false;
+    }
+
+    if (hasAnyLegalMove(grid, turn))
+    {
+        return false;
+    }
+
+    return true;
+}
+
 int main()
 {
     SetConsoleOutputCP(CP_UTF8);
@@ -426,6 +463,17 @@ int main()
         system("cls");
         displayBoard(grid);
 
+        if (isCheckmate(grid, turn))
+        {
+            cout << (turn == WHITE ? "black" : "white") << " wins by checkmate!\n";
+            break;
+        }
+
+        if (isKingInCheck(grid, turn))
+        {
+            cout << "check!\n";
+        }
+
         cout << (turn == WHITE ? "white" : "black") << " to move (e.g. e2 e4): ";
         getline(cin, input);
 
@@ -440,11 +488,10 @@ int main()
         m.dc = input[3] - 'a';
         m.dr = 8 - (input[4] - '0');
 
-        int before = (grid[m.dr][m.dc] != nullptr) ? 1 : 0;
+        Piece *before = grid[m.sr][m.sc];
         movePiece(grid, m, turn);
-        int after = (grid[m.dr][m.dc] != nullptr) ? 1 : 0;
 
-        // only switch turn if the move actually happened
+        // turn switches only if the piece actually moved
         if (grid[m.dr][m.dc] != nullptr && grid[m.sr][m.sc] == nullptr)
         {
             turn = (turn == WHITE) ? BLACK : WHITE;
