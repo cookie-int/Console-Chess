@@ -293,7 +293,6 @@ public:
     }
 };
 
-// player owns a name, colour, and their own timer
 class Player
 {
 private:
@@ -308,6 +307,36 @@ public:
     string getName() const { return name; }
     Colour getColor() const { return colour; }
     Timer &getTimer() { return timer; }
+};
+
+// game owns both players and manages whose turn it is
+class Game
+{
+private:
+    Player white;
+    Player black;
+    Colour turn;
+
+public:
+    Game(string whiteName, string blackName, bool isTimed)
+        : white(whiteName, WHITE, isTimed ? 600 : 0, isTimed),
+          black(blackName, BLACK, isTimed ? 600 : 0, isTimed),
+          turn(WHITE) {}
+
+    Player &getCurrentPlayer()
+    {
+        return (turn == WHITE) ? white : black;
+    }
+
+    Player &getWhite() { return white; }
+    Player &getBlack() { return black; }
+
+    Colour getTurn() const { return turn; }
+
+    void switchTurn()
+    {
+        turn = (turn == WHITE) ? BLACK : WHITE;
+    }
 };
 
 void initializeBoard(Piece *grid[8][8])
@@ -342,36 +371,6 @@ void initializeBoard(Piece *grid[8][8])
 
     grid[0][4] = new King(0, 4, BLACK);
     grid[7][4] = new King(7, 4, WHITE);
-}
-
-void displayBoard(Piece *grid[8][8])
-{
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-
-    for (int i = 0; i < 8; i++)
-    {
-        cout << 8 - i << " ";
-
-        for (int j = 0; j < 8; j++)
-        {
-            bool isLight = (i + j) % 2 == 0;
-
-            if (isLight)
-                SetConsoleTextAttribute(hConsole, BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE);
-            else
-                SetConsoleTextAttribute(hConsole, BACKGROUND_INTENSITY);
-
-            if (grid[i][j] == nullptr)
-                cout << "    ";
-            else
-                cout << " " << grid[i][j]->getSymbol() << " ";
-        }
-
-        SetConsoleTextAttribute(hConsole, 7);
-        cout << endl;
-    }
-
-    cout << "   a   b   c   d   e   f   g   h\n";
 }
 
 Position findKing(Piece *grid[8][8], Colour kingColor)
@@ -545,29 +544,100 @@ bool isCheckmate(Piece *grid[8][8], Colour turn)
     return true;
 }
 
+bool isTimeOut(Game &game)
+{
+    Player &current = game.getCurrentPlayer();
+    if (!current.getTimer().timed)
+    {
+        return false;
+    }
+    return current.getTimer().getRemaining() <= 0;
+}
+
+// displayBoard now takes the game object to show player names and timers beside the board
+void displayBoard(Piece *grid[8][8], Game &game)
+{
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    Player &white = game.getWhite();
+    Player &black = game.getBlack();
+
+    for (int i = 0; i < 8; i++)
+    {
+        cout << 8 - i << " ";
+
+        for (int j = 0; j < 8; j++)
+        {
+            bool isLight = (i + j) % 2 == 0;
+
+            if (isLight)
+                SetConsoleTextAttribute(hConsole, BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE);
+            else
+                SetConsoleTextAttribute(hConsole, BACKGROUND_INTENSITY);
+
+            if (grid[i][j] == nullptr)
+                cout << "    ";
+            else
+                cout << " " << grid[i][j]->getSymbol() << " ";
+        }
+
+        SetConsoleTextAttribute(hConsole, 7);
+
+        if (i == 1)
+        {
+            cout << "  black: " << black.getName() << " [" << black.getTimer().format() << "]";
+        }
+        else if (i == 6)
+        {
+            cout << "  white: " << white.getName() << " [" << white.getTimer().format() << "]";
+        }
+
+        cout << endl;
+    }
+
+    cout << "   a   b   c   d   e   f   g   h\n";
+}
+
 int main()
 {
     SetConsoleOutputCP(CP_UTF8);
     system("cls");
 
+    string whiteName, blackName;
+
+    cout << "enter white player name: ";
+    getline(cin, whiteName);
+
+    cout << "enter black player name: ";
+    getline(cin, blackName);
+
+    cout << "timed game? (1 = yes, 2 = no): ";
+    int mode;
+    cin >> mode;
+    cin.ignore();
+
+    bool isTimed = (mode == 1);
+
+    Game game(whiteName, blackName, isTimed);
+    game.getCurrentPlayer().getTimer().start();
+
     Piece *grid[8][8];
     initializeBoard(grid);
 
-    // players now carry their own timers
-    Player white("white", WHITE, 600, false);
-    Player black("black", BLACK, 600, false);
-
-    white.getTimer().start();
-
-    Colour turn = WHITE;
+    Position selected = {-1, -1};
     string input;
 
     while (true)
     {
         system("cls");
-        displayBoard(grid);
+        displayBoard(grid, game);
 
-        Player &current = (turn == WHITE) ? white : black;
+        Colour turn = game.getTurn();
+
+        if (isTimeOut(game))
+        {
+            cout << (turn == WHITE ? "black" : "white") << " wins on time!\n";
+            break;
+        }
 
         if (isCheckmate(grid, turn))
         {
@@ -580,31 +650,81 @@ int main()
             cout << "check!\n";
         }
 
-        cout << current.getName() << " [" << current.getTimer().format() << "] to move (e.g. e2 e4): ";
-        getline(cin, input);
-
-        if (input.length() < 5)
+        // phase 1: pick a piece
+        if (selected.r == -1)
         {
-            continue;
+            cout << game.getCurrentPlayer().getName() << " select piece (e.g. e2): ";
+            getline(cin, input);
+
+            if (input == "0")
+            {
+                continue;
+            }
+            if (input.length() < 2)
+            {
+                continue;
+            }
+
+            Position pos;
+            pos.c = input[0] - 'a';
+            pos.r = 8 - (input[1] - '0');
+
+            if (grid[pos.r][pos.c] != nullptr && grid[pos.r][pos.c]->getColor() == turn)
+            {
+                selected = pos;
+            }
         }
-
-        Move m;
-        m.sc = input[0] - 'a';
-        m.sr = 8 - (input[1] - '0');
-        m.dc = input[3] - 'a';
-        m.dr = 8 - (input[4] - '0');
-
-        movePiece(grid, m, turn);
-
-        if (grid[m.dr][m.dc] != nullptr && grid[m.sr][m.sc] == nullptr)
+        else
         {
-            current.getTimer().stop();
-            turn = (turn == WHITE) ? BLACK : WHITE;
-            Player &next = (turn == WHITE) ? white : black;
-            next.getTimer().start();
-        }
+            // phase 2: pick destination
+            cout << "select destination (0 to cancel): ";
+            getline(cin, input);
 
-        Sleep(500);
+            if (input == "0")
+            {
+                selected = {-1, -1};
+                continue;
+            }
+            if (input.length() < 2)
+            {
+                continue;
+            }
+
+            Move m;
+            m.sr = selected.r;
+            m.sc = selected.c;
+            m.dc = input[0] - 'a';
+            m.dr = 8 - (input[1] - '0');
+
+            Piece *p = grid[selected.r][selected.c];
+
+            if (p == nullptr)
+            {
+                cout << "no piece selected!\n";
+            }
+            else if (p->getColor() != turn)
+            {
+                cout << "not your piece!\n";
+            }
+            else if (!p->isValidMove(grid, m))
+            {
+                cout << "invalid move!\n";
+            }
+            else if (!makeMoveAndTest(grid, m, turn))
+            {
+                cout << "illegal move: king would be in check!\n";
+            }
+            else
+            {
+                movePiece(grid, m, turn);
+                selected = {-1, -1};
+                game.getCurrentPlayer().getTimer().stop();
+                game.switchTurn();
+                game.getCurrentPlayer().getTimer().start();
+            }
+
+            Sleep(800);
+        }
     }
 
     return 0;
