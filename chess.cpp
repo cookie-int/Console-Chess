@@ -1,19 +1,22 @@
 #include <iostream>
 #include <cmath>
 #include <chrono>
+#include <cstdlib>
 #include <windows.h>
 using namespace std;
 
+// since there are only 2 possible colours we use enum
 enum Colour
 {
     WHITE,
     BLACK
 };
 
+// to store move current and destination coordinates
 struct Move
 {
-    int sr, sc;
-    int dr, dc;
+    int sr, sc; // source row, col
+    int dr, dc; // destination row, col
 };
 
 struct Position
@@ -42,6 +45,8 @@ public:
     virtual ~Piece() {}
 };
 
+// pawn moves forward 1, forward 2 from start row, or captures diagonally
+// direction depends on colour: white goes up (-1), black goes down (+1)
 class Pawn : public Piece
 {
 public:
@@ -58,11 +63,13 @@ public:
         int dr = m.dr, dc = m.dc;
         Piece *dest = grid[dr][dc];
 
+        // forward 1
         if (dc == sc && dest == nullptr && dr == sr + dir())
         {
             return true;
         }
 
+        // forward 2 from starting row
         if ((colour == WHITE && sr == 6) || (colour == BLACK && sr == 1))
         {
             if (dc == sc &&
@@ -74,6 +81,7 @@ public:
             }
         }
 
+        // diagonal capture: opponent piece must be present
         if (abs(static_cast<int>(dc - sc)) == 1 && dr == sr + dir() && dest != nullptr && dest->getColor() != colour)
         {
             return true;
@@ -83,6 +91,7 @@ public:
     }
 };
 
+// rook moves any number of squares along a row or column, path must be clear
 class Rook : public Piece
 {
 public:
@@ -119,6 +128,7 @@ public:
     }
 };
 
+// knight moves in an l-shape (2+1), jumps over pieces
 class Knight : public Piece
 {
 public:
@@ -139,6 +149,7 @@ public:
     }
 };
 
+// bishop moves diagonally any number of squares, path must be clear
 class Bishop : public Piece
 {
 public:
@@ -175,6 +186,7 @@ public:
     }
 };
 
+// queen combines rook and bishop movement
 class Queen : public Piece
 {
 public:
@@ -189,6 +201,7 @@ public:
     }
 };
 
+// king moves exactly 1 square in any direction
 class King : public Piece
 {
 public:
@@ -209,6 +222,7 @@ public:
     }
 };
 
+// tracks remaining time for a player; supports timed and untimed modes
 class Timer
 {
 private:
@@ -265,6 +279,7 @@ public:
         return sec;
     }
 
+    // returns time as mm:ss string, or "--:--" for untimed
     string format() const
     {
         if (!timed)
@@ -293,6 +308,7 @@ public:
     }
 };
 
+// player owns a name, colour, and their own timer
 class Player
 {
 private:
@@ -309,7 +325,6 @@ public:
     Timer &getTimer() { return timer; }
 };
 
-// game owns both players and manages whose turn it is
 class Game
 {
 private:
@@ -554,47 +569,87 @@ bool isTimeOut(Game &game)
     return current.getTimer().getRemaining() <= 0;
 }
 
-// displayBoard now takes the game object to show player names and timers beside the board
-void displayBoard(Piece *grid[8][8], Game &game)
+// board now has a unicode border, player info panel on the right,
+// and highlights legal moves for the selected piece
+void displayBoard(Piece *grid[8][8], Position selected, Colour turn, Game &game)
 {
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     Player &white = game.getWhite();
     Player &black = game.getBlack();
 
+    cout << "╔═════════════════════════════════════╗" << endl;
+    cout << "║                 CHESS               ║" << endl;
+    cout << "╚═════════════════════════════════════╝" << endl;
+
     for (int i = 0; i < 8; i++)
     {
-        cout << 8 - i << " ";
+        cout << "║ " << 8 - i << "  ";
 
         for (int j = 0; j < 8; j++)
         {
             bool isLight = (i + j) % 2 == 0;
+            bool highlight = false;
+            bool capture = false;
 
-            if (isLight)
+            if (selected.r != -1)
+            {
+                Move m{selected.r, selected.c, i, j};
+
+                if (isLegalMove(grid, m, turn))
+                {
+                    highlight = true;
+                    if (grid[i][j] != nullptr)
+                    {
+                        capture = true;
+                    }
+                }
+            }
+
+            if (capture)
+            {
+                SetConsoleTextAttribute(hConsole, BACKGROUND_RED | BACKGROUND_INTENSITY);
+            }
+            else if (highlight)
+            {
+                SetConsoleTextAttribute(hConsole, BACKGROUND_RED | BACKGROUND_GREEN);
+            }
+            else if (isLight)
+            {
                 SetConsoleTextAttribute(hConsole, BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE);
+            }
             else
+            {
                 SetConsoleTextAttribute(hConsole, BACKGROUND_INTENSITY);
+            }
 
             if (grid[i][j] == nullptr)
+            {
                 cout << "    ";
+            }
             else
+            {
                 cout << " " << grid[i][j]->getSymbol() << " ";
+            }
         }
 
         SetConsoleTextAttribute(hConsole, 7);
 
+        cout << " ║ ";
+
         if (i == 1)
         {
-            cout << "  black: " << black.getName() << " [" << black.getTimer().format() << "]";
+            cout << "Black: " << black.getName() << " [" << black.getTimer().format() << "]";
         }
         else if (i == 6)
         {
-            cout << "  white: " << white.getName() << " [" << white.getTimer().format() << "]";
+            cout << "White: " << white.getName() << " [" << white.getTimer().format() << "]";
         }
 
         cout << endl;
     }
 
-    cout << "   a   b   c   d   e   f   g   h\n";
+    cout << "║     a   b   c   d   e   f   g   h   ║" << endl;
+    cout << "╚═════════════════════════════════════╝" << endl;
 }
 
 int main()
@@ -602,16 +657,24 @@ int main()
     SetConsoleOutputCP(CP_UTF8);
     system("cls");
 
-    string whiteName, blackName;
+    cout << "  ╔══════════════════════╗" << endl;
+    cout << "  ║         CHESS        ║" << endl;
+    cout << "  ╚══════════════════════╝" << endl;
 
-    cout << "enter white player name: ";
+    string whiteName, blackName;
+    int mode;
+
+    cout << "Enter player 1 name (white): ";
     getline(cin, whiteName);
 
-    cout << "enter black player name: ";
+    cout << "Enter player 2 name (Black) ";
     getline(cin, blackName);
 
-    cout << "timed game? (1 = yes, 2 = no): ";
-    int mode;
+    cout << "╔════════════════════════════╗" << endl;
+    cout << "║ 1. Timed (10 minutes each) ║" << endl;
+    cout << "║ 2. Untimed                 ║" << endl;
+    cout << "╚════════════════════════════╝" << endl;
+    cout << "choice: ";
     cin >> mode;
     cin.ignore();
 
@@ -629,7 +692,7 @@ int main()
     while (true)
     {
         system("cls");
-        displayBoard(grid, game);
+        displayBoard(grid, selected, game.getTurn(), game);
 
         Colour turn = game.getTurn();
 
@@ -650,7 +713,6 @@ int main()
             cout << "check!\n";
         }
 
-        // phase 1: pick a piece
         if (selected.r == -1)
         {
             cout << game.getCurrentPlayer().getName() << " select piece (e.g. e2): ";
@@ -676,7 +738,6 @@ int main()
         }
         else
         {
-            // phase 2: pick destination
             cout << "select destination (0 to cancel): ";
             getline(cin, input);
 
