@@ -284,13 +284,174 @@ void displayBoard(Piece *grid[8][8])
     cout << "   a   b   c   d   e   f   g   h\n";
 }
 
+// temporarily applies the move, checks if own king ends up in check, then undoes it
+// returns true if the move is safe
+bool makeMoveAndTest(Piece *grid[8][8], Move m, Colour turn);
+
+bool isKingInCheck(Piece *grid[8][8], Colour kingColor);
+
+bool isLegalMove(Piece *grid[8][8], Move m, Colour turn)
+{
+    Piece *p = grid[m.sr][m.sc];
+
+    if (p == nullptr)
+    {
+        return false;
+    }
+    if (p->getColor() != turn)
+    {
+        return false;
+    }
+    if (!p->isValidMove(grid, m))
+    {
+        return false;
+    }
+    if (!makeMoveAndTest(grid, m, turn))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool isKingInCheck(Piece *grid[8][8], Colour kingColor)
+{
+    // find king position
+    int kr = -1, kc = -1;
+    for (int i = 0; i < 8; i++)
+    {
+        for (int j = 0; j < 8; j++)
+        {
+            if (grid[i][j] != nullptr && grid[i][j]->getColor() == kingColor)
+            {
+                // we'll add findKing properly in the next commit, using symbol for now
+                if (grid[i][j]->getSymbol() == "♔ " || grid[i][j]->getSymbol() == "♚ ")
+                {
+                    kr = i;
+                    kc = j;
+                }
+            }
+        }
+    }
+
+    if (kr == -1)
+    {
+        return false;
+    }
+
+    // check if any opponent piece can reach the king
+    for (int i = 0; i < 8; i++)
+    {
+        for (int j = 0; j < 8; j++)
+        {
+            Piece *p = grid[i][j];
+
+            if (p == nullptr || p->getColor() == kingColor)
+            {
+                continue;
+            }
+
+            Move testMove = {i, j, kr, kc};
+
+            if (p->isValidMove(grid, testMove))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool makeMoveAndTest(Piece *grid[8][8], Move m, Colour turn)
+{
+    Piece *captured = grid[m.dr][m.dc];
+    Piece *moving = grid[m.sr][m.sc];
+
+    grid[m.dr][m.dc] = moving;
+    grid[m.sr][m.sc] = nullptr;
+
+    bool inCheck = isKingInCheck(grid, turn);
+
+    // undo
+    grid[m.sr][m.sc] = moving;
+    grid[m.dr][m.dc] = captured;
+
+    return !inCheck;
+}
+
+// executes the move on the board after all validation passes
+void movePiece(Piece *grid[8][8], Move m, Colour currentTurn)
+{
+    Piece *p = grid[m.sr][m.sc];
+
+    if (p == nullptr)
+    {
+        cout << "no piece here!\n";
+        return;
+    }
+    if (p->getColor() != currentTurn)
+    {
+        cout << "not your piece!\n";
+        return;
+    }
+    if (!p->isValidMove(grid, m))
+    {
+        cout << "invalid move!\n";
+        return;
+    }
+    if (!makeMoveAndTest(grid, m, currentTurn))
+    {
+        cout << "illegal move: king would be in check!\n";
+        return;
+    }
+
+    grid[m.dr][m.dc] = p;
+    grid[m.sr][m.sc] = nullptr;
+}
+
 int main()
 {
     SetConsoleOutputCP(CP_UTF8);
+    system("cls");
 
     Piece *grid[8][8];
     initializeBoard(grid);
-    displayBoard(grid);
+
+    Colour turn = WHITE;
+    string input;
+
+    while (true)
+    {
+        system("cls");
+        displayBoard(grid);
+
+        cout << (turn == WHITE ? "white" : "black") << " to move (e.g. e2 e4): ";
+        getline(cin, input);
+
+        if (input.length() < 5)
+        {
+            continue;
+        }
+
+        Move m;
+        m.sc = input[0] - 'a';
+        m.sr = 8 - (input[1] - '0');
+        m.dc = input[3] - 'a';
+        m.dr = 8 - (input[4] - '0');
+
+        int before = (grid[m.dr][m.dc] != nullptr) ? 1 : 0;
+        movePiece(grid, m, turn);
+        int after = (grid[m.dr][m.dc] != nullptr) ? 1 : 0;
+
+        // only switch turn if the move actually happened
+        if (grid[m.dr][m.dc] != nullptr && grid[m.sr][m.sc] == nullptr)
+        {
+            turn = (turn == WHITE) ? BLACK : WHITE;
+        }
+
+        Sleep(500);
+    }
 
     return 0;
 }
