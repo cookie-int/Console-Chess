@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+#include <chrono>
 #include <windows.h>
 using namespace std;
 
@@ -208,6 +209,92 @@ public:
     }
 };
 
+// tracks remaining time for a player; supports timed and untimed modes
+class Timer
+{
+private:
+    int remainingSeconds;
+    chrono::time_point<chrono::steady_clock> lastUpdate;
+    bool running;
+
+public:
+    bool timed;
+
+    Timer(int seconds = 300, bool isTimed = true)
+    {
+        remainingSeconds = seconds;
+        running = false;
+        timed = isTimed;
+    }
+
+    void start()
+    {
+        if (!running)
+        {
+            lastUpdate = chrono::steady_clock::now();
+            running = true;
+        }
+    }
+
+    void stop()
+    {
+        if (running)
+        {
+            auto now = chrono::steady_clock::now();
+            int elapsed = chrono::duration_cast<chrono::seconds>(now - lastUpdate).count();
+            remainingSeconds -= elapsed;
+            running = false;
+        }
+    }
+
+    int getRemaining() const
+    {
+        if (!timed)
+        {
+            return INT_MAX;
+        }
+
+        int sec = remainingSeconds;
+
+        if (running)
+        {
+            auto now = chrono::steady_clock::now();
+            int elapsed = chrono::duration_cast<chrono::seconds>(now - lastUpdate).count();
+            sec -= elapsed;
+        }
+
+        return sec;
+    }
+
+    // returns time as mm:ss string, or "--:--" for untimed
+    string format() const
+    {
+        if (!timed)
+        {
+            return "--:--";
+        }
+
+        int sec = remainingSeconds;
+
+        if (running)
+        {
+            auto now = chrono::steady_clock::now();
+            int elapsed = chrono::duration_cast<chrono::seconds>(now - lastUpdate).count();
+            sec -= elapsed;
+        }
+
+        if (sec < 0)
+        {
+            sec = 0;
+        }
+
+        int m = sec / 60;
+        int s = sec % 60;
+
+        return to_string(m) + ":" + (s < 10 ? "0" : "") + to_string(s);
+    }
+};
+
 void initializeBoard(Piece *grid[8][8])
 {
     for (int i = 0; i < 8; i++)
@@ -272,7 +359,6 @@ void displayBoard(Piece *grid[8][8])
     cout << "   a   b   c   d   e   f   g   h\n";
 }
 
-// uses dynamic_cast to reliably identify the king piece on the board
 Position findKing(Piece *grid[8][8], Colour kingColor)
 {
     for (int i = 0; i < 8; i++)
@@ -292,7 +378,6 @@ Position findKing(Piece *grid[8][8], Colour kingColor)
     return {-1, -1};
 }
 
-// checks if any opponent piece can attack the king's position
 bool isKingInCheck(Piece *grid[8][8], Colour kingColor)
 {
     Position king = findKing(grid, kingColor);
@@ -394,7 +479,6 @@ void movePiece(Piece *grid[8][8], Move m, Colour currentTurn)
     grid[m.sr][m.sc] = nullptr;
 }
 
-// scans all pieces of the current player to see if any legal move exists
 bool hasAnyLegalMove(Piece *grid[8][8], Colour turn)
 {
     for (int sr = 0; sr < 8; sr++)
@@ -431,7 +515,6 @@ bool hasAnyLegalMove(Piece *grid[8][8], Colour turn)
     return false;
 }
 
-// checkmate: king is in check and there are no legal moves left
 bool isCheckmate(Piece *grid[8][8], Colour turn)
 {
     if (!isKingInCheck(grid, turn))
@@ -458,6 +541,10 @@ int main()
     Colour turn = WHITE;
     string input;
 
+    // just testing Timer exists and works before wiring into Player
+    Timer t(600, true);
+    t.start();
+
     while (true)
     {
         system("cls");
@@ -474,6 +561,7 @@ int main()
             cout << "check!\n";
         }
 
+        cout << "time remaining: " << t.format() << "\n";
         cout << (turn == WHITE ? "white" : "black") << " to move (e.g. e2 e4): ";
         getline(cin, input);
 
@@ -488,10 +576,8 @@ int main()
         m.dc = input[3] - 'a';
         m.dr = 8 - (input[4] - '0');
 
-        Piece *before = grid[m.sr][m.sc];
         movePiece(grid, m, turn);
 
-        // turn switches only if the piece actually moved
         if (grid[m.dr][m.dc] != nullptr && grid[m.sr][m.sc] == nullptr)
         {
             turn = (turn == WHITE) ? BLACK : WHITE;
@@ -500,5 +586,4 @@ int main()
         Sleep(500);
     }
 
-    return 0;
-}
+    return 0
